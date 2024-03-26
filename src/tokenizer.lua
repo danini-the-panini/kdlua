@@ -92,6 +92,7 @@ function string:lines()
     end
     i = i+1
   end
+  table.insert(lines, buffer)
   return lines
 end
 
@@ -255,13 +256,13 @@ local function convert_escapes(str)
           j = j+1
           cj = char(j)
         end
-        if #hex > 6 or char(j) ~= "}" then error("Invalid unicode escape: "..hex) end
+        if #hex > 6 or char(j) ~= "}" then error("Invalid unicode escape: \\u{"..hex.."}") end
         local code = tonumber(hex, 16)
         if not code then error("Invalid unicode escape: "..hex) end
-        if code < 0 or code > 0x10FFFF then error("Invalid code point"..code) end
+        if code < 0 or code > 0x10FFFF then error(string.format("Invalid code point \\u{%x}", code)) end
         i = j
         buffer = buffer..utf8.char(code)
-      elseif table.contains(WHITESPACE, c) or table.contains(NEWLINES, c) then
+      elseif table.contains(WHITESPACE, c2) or table.contains(NEWLINES, c2) then
         local j = i+2
         local cj = char(j)
         while table.contains(WHITESPACE, cj) or table.contains(NEWLINES, cj) do
@@ -270,7 +271,7 @@ local function convert_escapes(str)
         end
         i = j-1
       else
-        error("Unexpected escape: "..c)
+        error("Unexpected escape: \\"..c2)
       end
     else buffer = buffer..c
     end
@@ -284,15 +285,15 @@ local function unindent(s)
   local all = s:lines()
   local indent = all[#all]
   local lines = {}
-  all:move(1,#all-1, lines)
+  table.move(all, 1, #all-1, 1, lines)
 
   if #indent ~= 0 then
     for i=1,utf8.len(indent) do
       if not table.contains(WHITESPACE, utf8.sub(indent,i,i)) then
-        error("Invalid muliline string final line")
+        error("Invalid muliline string final line: '"..indent.."'")
       end
     end
-    for line, _ in pairs(lines) do
+    for _, line in pairs(lines) do
       if not line:starts(indent) then
         error("Invalid multiline string indentation")
       end
@@ -300,8 +301,8 @@ local function unindent(s)
   end
 
   local result = ""
-  for line, i in pairs(lines) do
-    result = result..utf8.sub(line, utf8.len(indent))
+  for i, line in pairs(lines) do
+    result = result..utf8.sub(line, utf8.len(indent)+1)
     if i < #lines then result = result.."\n" end
   end
 
@@ -494,7 +495,7 @@ function Tokenizer:_read_next()
         if self.buffer == "#nan" then return { type="FLOAT", value=-(0/0) } end
         error("Unknown keyword "..self.buffer)
       end
-    elseif self.context == "string" or self.context == "muli_line_string" then
+    elseif self.context == "string" or self.context == "multi_line_string" then
       if c == "\\" then
         self.buffer = self.buffer..c
         self.buffer = self.buffer..self:char(self.index + 1)
