@@ -24,3 +24,6 @@ build = {
 test = {
    type = "busted"
 }
+dependencies = {
+   "luautf8 >= 0.1.5 < 1.0"
+}
