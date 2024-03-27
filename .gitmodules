@@ -1,0 +1,4 @@
+[submodule "spec/kdl-org"]
+	path = spec/kdl-org
+	url = git@github.com:kdl-org/kdl
+	branch = kdl-v2

@@ -2,11 +2,22 @@ local document = {}
 
 local Document = {}
 
+local function __tostring(self)
+  local s = ""
+  for _, node in pairs(self.nodes) do
+    s = s..tostring(node).."\n"
+  end
+  return s
+end
+
 function document.new(nodes)
   local self = {
     nodes=nodes or {}
   }
-  setmetatable(self, { __index = Document })
+  setmetatable(self, {
+    __index=Document,
+    __tostring=__tostring
+  })
   return self
 end
 

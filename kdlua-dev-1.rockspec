@@ -27,3 +27,6 @@ test = {
 dependencies = {
    "luautf8 >= 0.1.5 < 1.0"
 }
+test_dependencies = {
+   "luafilesystem >= 1.8.0 < 2.0.0"
+}
