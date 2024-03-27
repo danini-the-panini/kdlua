@@ -7,7 +7,7 @@ describe("kdl", function()
     if f~=nil then io.close(f) return true else return false end
   end
 
-  function readfile(filename)
+  local function readfile(filename)
     local f = assert(io.open(filename, "r"))
     local s = f:read("a")
     f:close()
