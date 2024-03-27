@@ -123,6 +123,7 @@ function Parser:entries(n)
         local v = self:value()
         if not commented then table.insert(n.entries, v) end
       end
+      commented = false
     else
       local v = self:value()
       if not commented then table.insert(n.entries, v) end
