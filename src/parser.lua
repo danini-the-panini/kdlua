@@ -35,7 +35,7 @@ function Parser:node()
   end
 
   local type = self:type()
-  if not self:peek_identifier() then return false end
+  if not type and not self:peek_identifier() then return false end
   local n = node.new(self:identifier())
 
   local t = self.tokenizer:peek().type
@@ -92,10 +92,10 @@ function Parser:entries(n)
     if p == "IDENT" then
       if self.tokenizer:peek_next().type == "EQUALS" then
         local k, v = self:prop()
-        if not commented then n.entries[k] = v end
+        if not commented then n:insert(k, v) end
       else
         local v = self:value()
-        if not commented then table.insert(n.entries, v) end
+        if not commented then n:insert(v) end
       end
       commented = false
     elseif p == "LBRACE" then
@@ -118,15 +118,15 @@ function Parser:entries(n)
     elseif p == "STRING" then
       if self.tokenizer:peek_next().type == "EQUALS" then
         local k, v = self:prop()
-        if not commented then n.entries[k] = v end
+        if not commented then n:insert(k, v) end
       else
         local v = self:value()
-        if not commented then table.insert(n.entries, v) end
+        if not commented then n:insert(v) end
       end
       commented = false
     else
       local v = self:value()
-      if not commented then table.insert(n.entries, v) end
+      if not commented then n:insert(v) end
       commented = false
     end
   end

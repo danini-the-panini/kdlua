@@ -3,6 +3,8 @@ local document = {}
 local Document = {}
 
 local function __tostring(self)
+  if #self.nodes == 0 then return "\n" end
+
   local s = ""
   for _, node in pairs(self.nodes) do
     s = s..tostring(node).."\n"

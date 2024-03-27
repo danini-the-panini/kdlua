@@ -1,3 +1,8 @@
+require "kdl.util"
+
+local stringdumper = require "kdl.stringdumper"
+local dump = stringdumper.dump
+
 local node = {}
 
 local Node = {}
@@ -9,14 +14,14 @@ end
 function Node:tostring(depth)
   local indent = string.rep("    ", depth)
   local typestr = ""
-  if self.type then typestr = "("..self.type..")" end
-  local s = indent..typestr..self.name
-  for k, v in pairs(self.entries) do
-    if type(k) == "number" then
-      s = s.." "..tostring(v)
-    else
-      s = s.." "..k.."="..tostring(v)
-    end
+  if self.type then typestr = "("..dump(self.type)..")" end
+  local s = indent..typestr..dump(self.name)
+  for _, v in ipairs(self.entries) do
+    s = s.." "..tostring(v)
+  end
+  for _, k in pairs(self.keys) do
+    local v = self.entries[k]
+    s = s.." "..dump(k).."="..tostring(v)
   end
   if #self.children > 0 then
     s = s.." {\n"
@@ -29,9 +34,14 @@ function Node:tostring(depth)
 end
 
 function node.new(name, entries, children, type)
+  local keys = {}
+  for k, _ in pairs(entries or {}) do
+    if type(k) ~= "number" then table.insert(keys, k) end
+  end
   local self = {
     name=name,
     entries=entries or {},
+    keys=keys,
     children=children or {},
     type=type
   }
@@ -40,6 +50,19 @@ function node.new(name, entries, children, type)
     __tostring=__tostring
   })
   return self
+end
+
+function Node:insert(k, v)
+  if v == nil then
+    table.insert(self.entries, k)
+    return
+  end
+
+  if not table.contains(self.keys, k) then
+    table.insert(self.keys, k)
+  end
+
+  self.entries[k] = v
 end
 
 return node

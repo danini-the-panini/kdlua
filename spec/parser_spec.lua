@@ -227,9 +227,11 @@ describe("parser", function()
   end)
 
   it("parses properties", function()
-    local doc = parse([[author "Alex Monad" email="alex@example.com" active= #true
-foo bar =#true "baz" quux =\
-  #false 1 2 3]])
+    local doc = parse[[
+      author "Alex Monad" email="alex@example.com" active= #true
+      foo bar =#true "baz" quux =\
+        #false 1 2 3
+    ]]
     local nodes = document.new{
       node.new("author", { 
           value.new("Alex Monad"),

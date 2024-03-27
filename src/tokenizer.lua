@@ -1,64 +1,10 @@
 local utf8 = require "lua-utf8"
 
-function table.contains(t, x)
-  for _, value in pairs(t) do
-    if value == x then return true end
-  end
-  return false
-end
-
-function string:starts(with)
-  return utf8.sub(self,1,utf8.len(with)) == with
-end
+local util = require "kdl.util"
 
 local tokenizer = {}
 
 local Tokenizer = {}
-
-local EQUALS = {"=", "﹦", "＝", "🟰"}
-
-local SYMBOLS = {
-  ["{"]="LBRACE",
-  ["}"]="RBRACE",
-  [";"]="SEMICOLON"
-}
-for _, value in pairs(EQUALS) do
-  SYMBOLS[value] = "EQUALS"
-end
-
-local DIGITS = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" }
-
-local WHITESPACE = {
-  "\u{0009}", "\u{000B}", "\u{0020}", "\u{00A0}",
-  "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}",
-  "\u{2003}", "\u{2004}", "\u{2005}", "\u{2006}",
-  "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}",
-  "\u{202F}", "\u{205F}", "\u{3000}"
-}
-
-local NEWLINES = { "\u{000A}", "\u{0085}", "\u{000C}", "\u{2028}", "\u{2029}" }
-
-local NON_IDENTIFIER_CHARS = {
-  nil,
-  "\r", "\\", "[", "]", "(", ")", '"', "/", "#"
-}
-for _, value in pairs(WHITESPACE) do table.insert(NON_IDENTIFIER_CHARS, value) end
-for _, value in pairs(NEWLINES) do table.insert(NON_IDENTIFIER_CHARS, value) end
-for key, _ in pairs(SYMBOLS) do table.insert(NON_IDENTIFIER_CHARS, key) end
-for i = 0x0000, 0x0020 do table.insert(NON_IDENTIFIER_CHARS, utf8.char(i)) end
-
-local NON_INITIAL_IDENTIFIER_CHARS = {}
-for _, value in pairs(NON_IDENTIFIER_CHARS) do table.insert(NON_INITIAL_IDENTIFIER_CHARS, value) end
-for _, value in pairs(DIGITS) do table.insert(NON_INITIAL_IDENTIFIER_CHARS, value) end
-
-local FORBIDDEN = { "\u{007F}", "\u{FEFF}" }
-for i = 0x0000, 0x0008 do table.insert(FORBIDDEN, utf8.char(i)) end
-for i = 0x000E, 0x001F do table.insert(FORBIDDEN, utf8.char(i)) end
-for i = 0x200E, 0x200F do table.insert(FORBIDDEN, utf8.char(i)) end
-for i = 0x202A, 0x202E do table.insert(FORBIDDEN, utf8.char(i)) end
-for i = 0x2066, 0x2069 do table.insert(FORBIDDEN, utf8.char(i)) end
-
-local RESERVED = { "true", "false", "null", "inf", "-inf", "nan" }
 
 local function debom(str)
   if utf8.sub(str, 1, 1) == "\u{FEFF}" then
@@ -84,7 +30,7 @@ function string:lines()
       table.insert(lines, buffer)
       buffer = ""
       i = i+1
-    elseif table.contains(NEWLINES, c) then
+    elseif table.contains(util.NEWLINES, c) then
       table.insert(lines, buffer)
       buffer = ""
     else
@@ -191,9 +137,9 @@ local function parse_decimal(s)
   elseif valid_integer(s) then
     return { type="INTEGER", value=tonumber(munch_underscores(s), 10) }
   else
-    if table.contains(NON_INITIAL_IDENTIFIER_CHARS, utf8.sub(s, 1, 1)) then error("Invalid number: "..s) end
+    if table.contains(util.NON_INITIAL_IDENTIFIER_CHARS, utf8.sub(s, 1, 1)) then error("Invalid number: "..s) end
     for i = 2,utf8.len(s) do
-      if table.contains(NON_IDENTIFIER_CHARS, utf8.sub(s, i, i)) then error("Invalid number: "..s) end
+      if table.contains(util.NON_IDENTIFIER_CHARS, utf8.sub(s, i, i)) then error("Invalid number: "..s) end
     end
     return { type="IDENT", value=s }
   end
@@ -262,10 +208,10 @@ local function convert_escapes(str)
         if code < 0 or code > 0x10FFFF then error(string.format("Invalid code point \\u{%x}", code)) end
         i = j
         buffer = buffer..utf8.char(code)
-      elseif table.contains(WHITESPACE, c2) or table.contains(NEWLINES, c2) then
+      elseif table.contains(util.WHITESPACE, c2) or table.contains(util.NEWLINES, c2) then
         local j = i+2
         local cj = char(j)
-        while table.contains(WHITESPACE, cj) or table.contains(NEWLINES, cj) do
+        while table.contains(util.WHITESPACE, cj) or table.contains(util.NEWLINES, cj) do
           j = j+1
           cj = char(j)
         end
@@ -289,7 +235,7 @@ local function unindent(s)
 
   if #indent ~= 0 then
     for i=1,utf8.len(indent) do
-      if not table.contains(WHITESPACE, utf8.sub(indent,i,i)) then
+      if not table.contains(util.WHITESPACE, utf8.sub(indent,i,i)) then
         error("Invalid muliline string final line: '"..indent.."'")
       end
     end
@@ -411,13 +357,13 @@ function Tokenizer:_read_next()
           end
         end
         error("Unexpected '\\")
-      elseif table.contains(EQUALS, c) then
+      elseif table.contains(util.EQUALS, c) then
         self:set_context("equals")
         self.buffer = c
         self.index = self.index + 1
-      elseif SYMBOLS[c] then
+      elseif util.SYMBOLS[c] then
         self.index = self.index + 1
-        return { type=SYMBOLS[c], value=c }
+        return { type=util.SYMBOLS[c], value=c }
       elseif c == "\r" then
         local n = self:char(self.index + 1)
         if n == "\n" then
@@ -427,7 +373,7 @@ function Tokenizer:_read_next()
           self.index = self.index + 1
           return { type="NEWLINE", value=c }
         end
-      elseif table.contains(NEWLINES, c) then
+      elseif table.contains(util.NEWLINES, c) then
         self.index = self.index + 1
         return { type="NEWLINE", value=c }
       elseif c == "/" then
@@ -446,7 +392,7 @@ function Tokenizer:_read_next()
         else
           error("Unexpected '"..c.."'")
         end
-      elseif table.contains(WHITESPACE, c) then
+      elseif table.contains(util.WHITESPACE, c) then
         self:set_context("whitespace")
         self.buffer = c
         self.index = self.index + 1
@@ -454,7 +400,7 @@ function Tokenizer:_read_next()
         if self.done then return { type=false, value=false } end
         self.done = true
         return { type="EOF", value="" }
-      elseif not table.contains(NON_INITIAL_IDENTIFIER_CHARS, c) then
+      elseif not table.contains(util.NON_INITIAL_IDENTIFIER_CHARS, c) then
         self:set_context("ident")
         self.buffer = c
         self.index = self.index + 1
@@ -470,11 +416,11 @@ function Tokenizer:_read_next()
         error("Unexpected '"..c.."'")
       end
     elseif self.context == "ident" then
-      if c ~= nil and not table.contains(NON_IDENTIFIER_CHARS, c) then
+      if c ~= nil and not table.contains(util.NON_IDENTIFIER_CHARS, c) then
         self.index = self.index + 1
         self.buffer = self.buffer..c
       else
-        if table.contains(RESERVED, self.buffer) then
+        if table.contains(util.RESERVED, self.buffer) then
           error("Identifier cannot be a literal")
         elseif self.buffer:match("^%.%d") then
           error("Identifier cannot look like an illegal float")
@@ -535,7 +481,7 @@ function Tokenizer:_read_next()
       if c ~= nil and c:match("[0-9%.%-+_eE]") then
         self.index = self.index + 1
         self.buffer = self.buffer..c
-      elseif table.contains(WHITESPACE, c) or table.contains(NEWLINES, c) or c == nil then
+      elseif table.contains(util.WHITESPACE, c) or table.contains(util.NEWLINES, c) or c == nil then
         return parse_decimal(self.buffer)
       else
         error("Unexpected '"..c.."'")
@@ -544,7 +490,7 @@ function Tokenizer:_read_next()
       if c ~= nil and c:match("[0-9a-fA-F_]") then
         self.index = self.index + 1
         self.buffer = self.buffer..c
-      elseif table.contains(WHITESPACE, c) or table.contains(NEWLINES, c) or c == nil then
+      elseif table.contains(util.WHITESPACE, c) or table.contains(util.NEWLINES, c) or c == nil then
         return parse_hexadecimal(self.buffer)
       else
         error("Unexpected '"..c.."'")
@@ -553,7 +499,7 @@ function Tokenizer:_read_next()
       if c ~= nil and c:match("[0-7_]") then
         self.index = self.index + 1
         self.buffer = self.buffer..c
-      elseif table.contains(WHITESPACE, c) or table.contains(NEWLINES, c) or c == nil then
+      elseif table.contains(util.WHITESPACE, c) or table.contains(util.NEWLINES, c) or c == nil then
         return parse_octal(self.buffer)
       else
         error("Unexpected '"..c.."'")
@@ -562,13 +508,13 @@ function Tokenizer:_read_next()
       if c ~= nil and c:match("[01_]") then
         self.index = self.index + 1
         self.buffer = self.buffer..c
-      elseif table.contains(WHITESPACE, c) or table.contains(NEWLINES, c) or c == nil then
+      elseif table.contains(util.WHITESPACE, c) or table.contains(util.NEWLINES, c) or c == nil then
         return parse_binary(self.buffer)
       else
         error("Unexpected '"..c.."'")
       end
     elseif self.context == "single_line_comment" then
-      if table.contains(NEWLINES, c) or c == "\r" then
+      if table.contains(util.NEWLINES, c) or c == "\r" then
         self:set_context(nil)
         goto continue
       elseif c == nil then
@@ -590,10 +536,10 @@ function Tokenizer:_read_next()
         self.index = self.index + 1
       end
     elseif self.context == "whitespace" then
-      if table.contains(WHITESPACE, c) then
+      if table.contains(util.WHITESPACE, c) then
         self.index = self.index + 1
         self.buffer = self.buffer..c
-      elseif table.contains(EQUALS, c) then
+      elseif table.contains(util.EQUALS, c) then
         self:set_context("equals")
         self.buffer = self.buffer..c
         self.index = self.index + 1
@@ -642,7 +588,7 @@ end
 function Tokenizer:char(i)
   if i < 1 or i > utf8.len(self.str) then return nil end
   local c = utf8.sub(self.str, i, i)
-  for _, value in pairs(FORBIDDEN) do
+  for _, value in pairs(util.FORBIDDEN) do
     if c == value then error("Forbidden character: "..c) end
   end
   return c

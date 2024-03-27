@@ -18,7 +18,9 @@ build = {
       ["kdl.node"] = "src/node.lua",
       ["kdl.value"] = "src/value.lua",
       ["kdl.parser"] = "src/parser.lua",
-      ["kdl.tokenizer"] = "src/tokenizer.lua"
+      ["kdl.tokenizer"] = "src/tokenizer.lua",
+      ["kdl.stringdumper"] = "src/stringdumper.lua",
+      ["kdl.util"] = "src/util.lua"
    }
 }
 test = {
