@@ -9,6 +9,27 @@ describe("parser", function()
     if ok then return r else error(r) end
   end
 
+  local function n(name, args, children, ty, fn)
+    if type(args) == "function" then
+      fn = args
+      args = nil
+      children = nil
+      ty = nil
+    end
+    if type(children) == "function" then
+      fn = children
+      children = nil
+      ty = nil
+    end
+    if type(ty) == "function" then
+      fn = ty
+      ty = nil
+    end
+    local nd = node.new(name, args, children, ty)
+    if fn then fn(nd) end
+    return nd
+  end
+
   it("parses empty string", function()
     assert.same(document.new(), parse(""))
     assert.same(document.new(), parse(" "))
@@ -233,16 +254,14 @@ describe("parser", function()
         #false 1 2 3
     ]]
     local nodes = document.new{
-      node.new("author", { 
-          value.new("Alex Monad"),
-          ["email"]=value.new("alex@example.com"),
-          ["active"]=value.new(true)
-      }),
-      node.new("foo", {
-        value.new("baz"), value.new(1), value.new(2), value.new(3),
-        ["bar"]=value.new(true),
-        ["quux"]=value.new(false),
-      })
+      n("author", { value.new("Alex Monad") }, function(nd)
+        nd:insert("email", value.new("alex@example.com"))
+        nd:insert("active", value.new(true))
+      end),
+      n("foo", { value.new("baz"), value.new(1), value.new(2), value.new(3) }, function(nd)
+        nd:insert("bar", value.new(true))
+        nd:insert("quux", value.new(false))
+      end)
     }
     assert.same(nodes, doc)
   end)

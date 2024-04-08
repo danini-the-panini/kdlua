@@ -33,7 +33,7 @@ function Node:tostring(depth)
   return s
 end
 
-function node.new(name, entries, children, type)
+function node.new(name, entries, children, ty)
   local keys = {}
   for k, _ in pairs(entries or {}) do
     if type(k) ~= "number" then table.insert(keys, k) end
@@ -43,7 +43,7 @@ function node.new(name, entries, children, type)
     entries=entries or {},
     keys=keys,
     children=children or {},
-    type=type
+    type=ty
   }
   setmetatable(self, {
     __index=Node,
