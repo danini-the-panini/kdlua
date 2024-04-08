@@ -448,8 +448,9 @@ function Tokenizer:_read_next()
         self.index = self.index + 2
       elseif c == '"' then
         self.index = self.index + 1
-        local string = convert_escapes(self.buffer)
+        local string = self.buffer
         if self.context == "multi_line_string" then string = unindent(string) end
+        string = convert_escapes(string)
         return { type="STRING", value=string }
       elseif c == nil or c == "" then
         error("Unterminated string literal")
