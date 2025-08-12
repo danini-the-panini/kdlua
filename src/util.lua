@@ -1,5 +1,7 @@
 local utf8 = require "lua-utf8"
 
+local util = {}
+
 function table.contains(t, x)
   for _, value in pairs(t) do
     if value == x then return true end
@@ -7,18 +9,59 @@ function table.contains(t, x)
   return false
 end
 
+function table.join(t, sep)
+  local s = ""
+  local first = true
+  sep = sep or ""
+  for _,v in ipairs(t) do
+    if first then
+      s = v
+    else
+      s = s .. sep .. v
+    end
+    first = false
+  end
+  return s
+end
+
 function string:starts(with)
   return utf8.sub(self,1,utf8.len(with)) == with
 end
 
-local util = {}
+function string:lines()
+  local function char(i)
+    if i < 0 or i > utf8.len(self) then
+      return nil
+    end
+    return utf8.sub(self, i, i)
+  end
 
-util.EQUALS = {"=", "﹦", "＝", "🟰"}
+  local lines = {}
+  local i = 1
+  local buffer = ""
+  while i <= utf8.len(self) do
+    local c = char(i)
+    if c == "\r" and char(i+1) == "\n" then
+      table.insert(lines, buffer)
+      buffer = ""
+      i = i+1
+    elseif table.contains(util.NEWLINES, c) then
+      table.insert(lines, buffer)
+      buffer = ""
+    else
+      buffer = buffer..c
+    end
+    i = i+1
+  end
+  table.insert(lines, buffer)
+  return lines
+end
 
 util.SYMBOLS = {
   ["{"]="LBRACE",
   ["}"]="RBRACE",
-  [";"]="SEMICOLON"
+  [";"]="SEMICOLON",
+  ["="]="EQUALS"
 }
 for _, value in pairs(util.EQUALS) do
   util.SYMBOLS[value] = "EQUALS"
@@ -27,14 +70,19 @@ end
 util.DIGITS = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" }
 
 util.WHITESPACE = {
-  "\u{0009}", "\u{000B}", "\u{0020}", "\u{00A0}",
-  "\u{1680}", "\u{2000}", "\u{2001}", "\u{2002}",
-  "\u{2003}", "\u{2004}", "\u{2005}", "\u{2006}",
-  "\u{2007}", "\u{2008}", "\u{2009}", "\u{200A}",
-  "\u{202F}", "\u{205F}", "\u{3000}"
+  "\u{0009}", "\u{0020}", "\u{00A0}", "\u{1680}",
+  "\u{2000}", "\u{2001}", "\u{2002}", "\u{2003}",
+  "\u{2004}", "\u{2005}", "\u{2006}", "\u{2007}",
+  "\u{2008}", "\u{2009}", "\u{200A}", "\u{202F}",
+  "\u{205F}", "\u{3000}"
 }
+util.ws = "["..table.join(util.WHITESPACE).."]"
+util.wss = util.ws.."*"
 
-util.NEWLINES = { "\u{000A}", "\u{0085}", "\u{000C}", "\u{2028}", "\u{2029}" }
+util.NEWLINES = { "\u{000A}", "\u{0085}", "\u{000B}", "\u{000C}", "\u{2028}", "\u{2029}" }
+
+util.nl = "["..table.join(util.NEWLINES).."]"
+util.nls = util.newline.."*"
 
 util.NON_IDENTIFIER_CHARS = {
   nil,
@@ -57,5 +105,7 @@ for i = 0x202A, 0x202E do table.insert(util.FORBIDDEN, utf8.char(i)) end
 for i = 0x2066, 0x2069 do table.insert(util.FORBIDDEN, utf8.char(i)) end
 
 util.RESERVED = { "true", "false", "null", "inf", "-inf", "nan" }
+
+util.VERSION_PATTERN = "^/-"..util.wss.."*kdl-version"..util.wss.."([0-9]+)"..util.wss..util.nls
 
 return util
