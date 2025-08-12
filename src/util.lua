@@ -16,30 +16,26 @@ function table.join(t, sep)
   for _,v in ipairs(t) do
     if first then
       s = v
+      first = false
     else
       s = s .. sep .. v
     end
-    first = false
   end
   return s
 end
 
-function string:starts(with)
-  return utf8.sub(self,1,utf8.len(with)) == with
-end
-
-function string:lines()
+function util.lines(str)
   local function char(i)
-    if i < 0 or i > utf8.len(self) then
+    if i < 0 or i > utf8.len(str) then
       return nil
     end
-    return utf8.sub(self, i, i)
+    return utf8.sub(str, i, i)
   end
 
   local lines = {}
   local i = 1
   local buffer = ""
-  while i <= utf8.len(self) do
+  while i <= utf8.len(str) do
     local c = char(i)
     if c == "\r" and char(i+1) == "\n" then
       table.insert(lines, buffer)
@@ -63,9 +59,6 @@ util.SYMBOLS = {
   [";"]="SEMICOLON",
   ["="]="EQUALS"
 }
-for _, value in pairs(util.EQUALS) do
-  util.SYMBOLS[value] = "EQUALS"
-end
 
 util.DIGITS = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" }
 
@@ -82,7 +75,7 @@ util.wss = util.ws.."*"
 util.NEWLINES = { "\u{000A}", "\u{0085}", "\u{000B}", "\u{000C}", "\u{2028}", "\u{2029}" }
 
 util.nl = "["..table.join(util.NEWLINES).."]"
-util.nls = util.newline.."*"
+util.nls = util.nl.."*"
 
 util.NON_IDENTIFIER_CHARS = {
   nil,

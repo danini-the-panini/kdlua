@@ -222,7 +222,9 @@ local function convert_escapes(str, ws)
         if #hex > 6 or char(j) ~= "}" then error("Invalid unicode escape: \\u{"..hex.."}") end
         local code = tonumber(hex, 16)
         if not code then error("Invalid unicode escape: "..hex) end
-        if code < 0 or code > 0x10FFFF then error(string.format("Invalid code point \\u{%x}", code)) end
+        if code < 0 or code > 0x10FFFF or (code >= 0xD800 and code <= 0xDFFF) then
+          error(string.format("Invalid code point \\u{%x}", code))
+        end
         i = j
         buffer = buffer..utf8.char(code)
       elseif ws and (table.contains(util.WHITESPACE, c2) or table.contains(util.NEWLINES, c2)) then
@@ -253,17 +255,17 @@ local function unescape_non_ws(str)
 end
 
 local function dedent(str)
-  local lines = string:lines()
+  local lines = util.lines(str)
   local indent = table.remove(lines, #lines)
-  if not indent:match(util.wss) then
-    error("Invalid multiline string final line")
+  if not indent:match("^"..util.wss.."$") then
+    error("Invalid multi-line string final line")
   end
 
   local valid = indent.."(.*)"
 
   local result = {}
   for _,line in ipairs(lines) do
-    if line:match(util.wss) then
+    if line:match("^"..util.wss.."$") then
       table.insert(result, '')
       goto continue
     end
@@ -272,9 +274,11 @@ local function dedent(str)
       table.insert(result, m)
       goto continue
     end
-    error("Invalid multiline string indentation")
+    error("Invalid multi-line string indentation")
     ::continue::
   end
+
+  return table.join(result, "\n")
 end
 
 function Tokenizer:_read_next()
@@ -300,16 +304,10 @@ function Tokenizer:_read_next()
           self:set_context("string")
           self:traverse(1)
         end
-        if self:char(self.index + 1) == "\n" then
-          self:set_context("multi_line_string")
-          self.index = self.index + 2
-        else
-          self:set_context("string")
-          self.index = self.index + 1
-        end
       elseif c == "#" then
         if self:char(self.index + 1) == '"' then
           self.buffer = ""
+          self.rawstring_hashes = 1
           if self:char(self.index + 2) == '"' and self:char(self.index + 3) == '"' then
             local nl = self:expect_newline(self.index + 4)
             self:set_context("multi_line_rawstring")
@@ -317,7 +315,6 @@ function Tokenizer:_read_next()
           else
             self:set_context("rawstring")
             self:traverse(2)
-            self.rawstring_hashes = 1
           end
           goto continue
         elseif self:char(self.index + 1) == "#" then
@@ -394,7 +391,7 @@ function Tokenizer:_read_next()
             goto continue
           end
         end
-        error("Unexpected '\\")
+        error([[Unexpected '\']])
       elseif c == "=" then
         self.buffer = c
         self:set_context("equals")
@@ -482,7 +479,7 @@ function Tokenizer:_read_next()
           end
           self:traverse(i)
         else
-          self.traverse(2)
+          self:traverse(2)
         end
       elseif c == '"' then
         self:traverse(1)
@@ -549,7 +546,7 @@ function Tokenizer:_read_next()
         end
         if h == self.rawstring_hashes then
           self:traverse(h + 3)
-          return self:_token("RAWSTRING", self:dedent(self.buffer))
+          return self:_token("RAWSTRING", dedent(self.buffer))
         end
       end
 
@@ -640,7 +637,7 @@ function Tokenizer:_read_next()
             goto continue
           end
         end
-        error("Unexpected '\\'")
+        error([[Unexpected '\']])
       elseif c == "/" and self:char(self.index + 1) == "*" then
         self.comment_nesting = 1
         self:set_context("multi_line_comment")
@@ -680,7 +677,7 @@ end
 function Tokenizer:traverse(n)
   n = n or 1
   for i = 0,n-1 do
-    local c = self:char(self.index + 1)
+    local c = self:char(self.index + i)
     if c == "\r" then
       self.column = 1
     elseif table.contains(util.NEWLINES, c) then
@@ -700,6 +697,17 @@ end
 function Tokenizer:revert_context()
   self.context = self.previous_context
   self.previous_context = nil
+end
+
+function Tokenizer:expect_newline(i)
+  local c = self:char(i)
+  if c == "\r" then
+    local n = self:char(i + 1)
+    if n == "\n" then return c..n end
+  elseif not table.contains(util.NEWLINES, c) then
+    error("Expected NEWLINE, found '"..c.."'")
+  end
+  return c
 end
 
 return tokenizer

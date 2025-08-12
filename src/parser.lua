@@ -29,8 +29,7 @@ function Parser:node()
 
   local commented = false
   if self.tokenizer:peek().type == "SLASHDASH" then
-    self.tokenizer:next()
-    self:ws()
+    self:slashdash()
     commented = true
   end
 
@@ -38,11 +37,7 @@ function Parser:node()
   if not type and not self:peek_identifier() then return false end
   local n = node.new(self:identifier())
 
-  local t = self.tokenizer:peek().type
-  if t == "WS" or t == "LBRACE" then self:entries(n)
-  elseif t == "SEMICOLON" then self.tokenizer:next()
-  elseif t == "LPAREN" then error("Unexpected '('")
-  end
+  self:entries(n)
 
   if commented then return nil end
   if type ~= nil then n.type = type end
@@ -86,57 +81,81 @@ end
 
 function Parser:entries(n)
   local commented = false
+  local has_children = false
   while true do
-    self:ws()
-    local p = self.tokenizer:peek().type
-    if p == "IDENT" then
-      if self.tokenizer:peek_next().type == "EQUALS" then
-        local k, v = self:prop()
-        if not commented then n:insert(k, v) end
-      else
-        local v = self:value()
-        if not commented then n:insert(v) end
-      end
-      commented = false
-    elseif p == "LBRACE" then
-      self.depth = self.depth + 1
-      local children = self:children()
-      if not commented then n.children = children end
-      self:node_term()
-      return
-    elseif p == "RBRACE" then
-      if self.depth == 0 then error("Unexpected '}'") end
-      self.depth = self.depth - 1
-      return
-    elseif p == "SLASHDASH" then
-      commented = true
-      self.tokenizer:next()
+    local peek = self.tokenizer:peek()
+    if peek.type == "WS" or peek.type == "SLASHDASH" then
       self:ws()
-    elseif p == "NEWLINE" or p == "EOF" or p == "SEMICOLON" then
-      self.tokenizer:next()
-      return
-    elseif p == "STRING" then
-      if self.tokenizer:peek_next().type == "EQUALS" then
-        local k, v = self:prop()
-        if not commented then n:insert(k, v) end
+      peek = self.tokenizer:peek()
+      if peek.type == "SLASHDASH" then
+        self:slashdash()
+        peek = self.tokenizer:peek()
+        commented = true
+      end
+      if peek.type == "STRING" or peek.type == "IDENT" then
+        if has_children then error("Unexpected "..peek.type) end
+        local t = self.tokenizer:peek_next()
+        if t.type == "EQUALS" then
+          local k, v = self:prop()
+          if not commented then n:insert(k, v) end
+        else
+          local v = self:value()
+          if not commented then n:insert(v) end
+        end
+        commented = false
+      elseif peek.type == "NEWLINE" or
+          peek.type == "EOF" or
+          peek.type == "SEMICOLON" then
+        self.tokenizer:next()
+        return
+      elseif peek.type == "LBRACE" then
+        self:lbrace(n, commented)
+        has_children = true
+        commented = false
+      elseif peek.type == "RBRACE" then
+        self:rbrace()
+        return
       else
         local v = self:value()
+        if has_children then error("Unexpected "..peek.type) end
         if not commented then n:insert(v) end
+        commented = false
       end
+    elseif peek.type == "NEWLINE" or
+        peek.type == "EOF" or
+        peek.type == "SEMICOLON" then
+      self.tokenizer:next()
+      return
+    elseif peek.type == "LBRACE" then
+      self:lbrace(n, commented)
+      has_children = true
       commented = false
+    elseif peek.type == "RBRACE" then
+      self:rbrace()
+      return
     else
-      local v = self:value()
-      if not commented then n:insert(v) end
-      commented = false
+      error("Unexpected "..peek.type)
     end
   end
+end
+
+function Parser:lbrace(n, commented)
+  if not commented and #n.children > 0 then error("Unexpected {") end
+  self.depth = self.depth + 1
+  local children = self:children()
+  self.depth = self.depth - 1
+  if not commented then n.children = children end
+end
+
+function Parser:rbrace()
+  if self.depth == 0 then error("Unexpected }") end
 end
 
 function Parser:prop()
   local name = self:identifier()
   self:expect("EQUALS")
-  local value = self:value()
-  return name, value
+  local val = self:value()
+  return name, val
 end
 
 function Parser:children()
@@ -174,20 +193,22 @@ function Parser:type()
   return type
 end
 
+function Parser:slashdash()
+  local t = self.tokenizer:next()
+  if t.type ~= "SLASHDASH" then
+    error("Expected SLASHDASH, found "..t.type)
+  end
+  self:linespaces()
+  local peek = self.tokenizer:peek()
+  if peek.type == "RBRACE" or peek.type == "EOF" or peek.type=="SEMICOLON" then
+    error("Unexpected "..peek.type.." after SLASHDASH")
+  end
+end
+
 function Parser:expect(type)
   local t = self.tokenizer:peek().type
   if t == type then return self.tokenizer:next()
   else error("Expected "..type..", got "..t) end
-end
-
-function Parser:node_term()
-  self:ws()
-  local t = self.tokenizer:peek().type
-  if t == "NEWLINE" or t == "SEMICOLON" or t == "EOF" then
-    return self.tokenizer:next()
-  elseif t ~= "RBRACE" then
-    error("Unexpected "..t)
-  end
 end
 
 function Parser:eof()
