@@ -1,0 +1,25 @@
+name: Test
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: 'true'
+
+      - uses: hishamhm/gh-actions-lua@master
+        with:
+          luaVersion: "5.4"
+
+      - uses: luarocks/gh-actions-luarocks@master
+        with:
+          luaRocksVersion: "3.12.2"
+
+      - name: Build
+        run: "luarocks build"
+
+      - name: Test
+        run: "luarocks test"
+

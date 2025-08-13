@@ -1,0 +1,475 @@
+describe("parser", function()
+  local parser = require "kdl.v1.parser"
+  local document = require "kdl.document"
+  local node = require "kdl.node"
+  local value = require "kdl.value"
+
+  local function parse(str)
+    local ok, r = xpcall(parser.parse, debug.traceback, str)
+    if ok then return r else error(r) end
+  end
+
+  local function n(name, args, children, ty, fn)
+    if type(args) == "function" then
+      fn = args
+      args = nil
+      children = nil
+      ty = nil
+    end
+    if type(children) == "function" then
+      fn = children
+      children = nil
+      ty = nil
+    end
+    if type(ty) == "function" then
+      fn = ty
+      ty = nil
+    end
+    local nd = node.new(name, args, children, ty)
+    if fn then fn(nd) end
+    return nd
+  end
+
+  it("parses empty string", function()
+    assert.same(document.new(), parse(""))
+    assert.same(document.new(), parse(" "))
+    assert.same(document.new(), parse("\n"))
+  end)
+
+  it("parses nodes", function()
+    assert.same(document.new{ node.new("node") }, parse("node"))
+    assert.same(document.new{ node.new("node") }, parse("node\n"))
+    assert.same(document.new{ node.new("node") }, parse("\nnode\n"))
+    assert.same(
+      document.new{
+        node.new("node1"),
+        node.new("node2")
+      },
+      parse("node1\nnode2")
+    )
+  end)
+
+  it("parses node entries", function()
+    assert.same(document.new{ node.new("node") }, parse("node;"))
+    assert.same(document.new{ node.new("node", { value.new(1) }) }, parse("node 1"))
+    assert.same(
+      document.new{
+        node.new("node", {
+          value.new(1),
+          value.new(2),
+          value.new("3"),
+          value.new(true),
+          value.new(false),
+          value.new(nil)
+        }),
+      },
+      parse('node 1 2 "3" true false null')
+    )
+    assert.same(document.new{ node.new("node", {}, { node.new("node2") }) }, parse("node {\n  node2\n}"))
+    assert.same(document.new{ node.new("node", {}, { node.new("node2") }) }, parse("node {\n    node2    \n}"))
+    assert.same(document.new{ node.new("node", {}, { node.new("node2") }) }, parse("node { node2; }"))
+  end)
+
+  it("parses slashdash nodes", function()
+    assert.same(document.new(), parse("/-node"))
+    assert.same(document.new(), parse("/- node"))
+    assert.same(document.new(), parse("/- node\n"))
+    assert.same(document.new(), parse("/-node 1 2 3"))
+    assert.same(document.new(), parse("/-node key=false"))
+    assert.same(document.new(), parse("/-node{\nnode\n}"))
+    assert.same(document.new(), parse("/-node 1 2 3 key=\"value\" \\\n{\nnode\n}"))
+  end);
+
+  it("parses slashdash args", function()
+    assert.same(document.new{ node.new("node") }, parse("node /-1"))
+    assert.same(document.new{ node.new("node", { value.new(2) }) }, parse("node /-1 2"))
+    assert.same(document.new{ node.new("node", { value.new(1), value.new(3) }) }, parse("node 1 /- 2 3"))
+    assert.same(document.new{ node.new("node") }, parse("node /--1"))
+    assert.same(document.new{ node.new("node") }, parse("node /- -1"))
+    assert.same(document.new{ node.new("node") }, parse("node \\\n/- -1"))
+  end)
+
+  it("parses slashdash props", function()
+    assert.same(document.new{ node.new("node") }, parse("node /-key=1"))
+    assert.same(document.new{ node.new("node") }, parse("node /- key=1"))
+    assert.same(document.new{ node.new("node", { ["key"]=value.new(1) }) }, parse("node key=1 /-key2=2"))
+  end)
+
+  it("parses slashdash children", function()
+    assert.same(document.new{ node.new("node") }, parse("node /-{}"))
+    assert.same(document.new{ node.new("node") }, parse("node /- {}"))
+    assert.same(document.new{ node.new("node") }, parse("node /-{\nnode2\n}"))
+  end)
+
+  it('parses strings', function()
+    assert.same(document.new{ node.new('node', { value.new("") }) }, parse('node ""'))
+    assert.same(document.new{ node.new('node', { value.new("hello") }) }, parse('node "hello"'))
+    assert.same(document.new{ node.new('node', { value.new("hello\nworld") }) }, parse([[node "hello\nworld"]]))
+    assert.same(document.new{ node.new('node', { value.new("\u{10FFF}") }) }, parse([[node "\u{10FFF}"]]))
+    assert.same(document.new{ node.new('node', { value.new("\"\\\u{08}\u{0C}\n\r\t") }) }, parse([[node "\"\\\b\f\n\r\t"]]))
+    assert.same(document.new{ node.new('node', { value.new("\u{10}") }) }, parse([[node "\u{10}"]]))
+    assert.has_error(function() parser.parse([[node "\i"]]) end, "Unexpected escape: \\i (1:6)")
+    assert.has_error(function() parser.parse([[node "\u{c0ffee}"]]) end, "Invalid code point \\u{c0ffee} (1:6)")
+  end)
+
+  it("parses floats", function()
+    assert.same(document.new{ node.new("node", { value.new(1.0) }) }, parse("node 1.0"))
+    assert.same(document.new{ node.new("node", { value.new(0.0) }) }, parse("node 0.0"))
+    assert.same(document.new{ node.new("node", { value.new(-1.0) }) }, parse("node -1.0"))
+    assert.same(document.new{ node.new("node", { value.new(1.0) }) }, parse("node +1.0"))
+    assert.same(document.new{ node.new("node", { value.new(1.0e10) }) }, parse("node 1.0e10"))
+    assert.same(document.new{ node.new("node", { value.new(1.0e-10) }) }, parse("node 1.0e-10"))
+    assert.same(document.new{ node.new("node", { value.new(123456789.0) }) }, parse("node 123_456_789.0"))
+    assert.same(document.new{ node.new("node", { value.new(123456789.0) }) }, parse("node 123_456_789.0_"))
+    assert.has_error(function() parser.parse("node ?1.0") end, "Expected EQUALS, got EOF (1:10)")
+    assert.has_error(function() parser.parse("node _1.0") end, "Expected EQUALS, got EOF (1:10)")
+    assert.has_error(function() parser.parse("node 1._0") end, "Invalid number: 1._0 (1:6)")
+    assert.has_error(function() parser.parse("node 1.") end, "Invalid number: 1. (1:6)")
+    assert.has_error(function() parser.parse("node .0") end, "Expected EQUALS, got EOF (1:8)")
+  end)
+
+  it("parses integers", function()
+    assert.same(document.new{ node.new("node", { value.new(0) }) }, parse("node 0"))
+    assert.same(document.new{ node.new("node", { value.new(123456789) }) }, parse("node 0123456789"))
+    assert.same(document.new{ node.new("node", { value.new(123456789) }) }, parse("node 0123_456_789"))
+    assert.same(document.new{ node.new("node", { value.new(123456789) }) }, parse("node 0123_456_789_"))
+    assert.same(document.new{ node.new("node", { value.new(123456789) }) }, parse("node +0123456789"))
+    assert.same(document.new{ node.new("node", { value.new(-123456789) }) }, parse("node -0123456789"))
+    assert.has_error(function() parser.parse('node ?0123456789') end, "Expected EQUALS, got EOF (1:17)")
+    assert.has_error(function() parser.parse('node _0123456789') end, "Expected EQUALS, got EOF (1:17)")
+    assert.has_error(function() parser.parse('node a') end, "Expected EQUALS, got EOF (1:7)")
+    assert.has_error(function() parser.parse('node --') end, "Expected EQUALS, got EOF (1:8)")
+  end)
+
+  it("parses hexadecimal", function()
+    assert.same(document.new{ node.new("node", { value.new(0x0123456789abcdef) }) }, parse("node 0x0123456789abcdef"))
+    assert.same(document.new{ node.new("node", { value.new(0x0123456789abcdef) }) }, parse("node 0x01234567_89abcdef"))
+    assert.same(document.new{ node.new("node", { value.new(0x0123456789abcdef) }) }, parse("node 0x0123456789abcdef_"))
+    assert.has_error(function() parser.parse("node 0x_123") end, "Invalid hexadecimal: _123 (1:6)")
+    assert.has_error(function() parser.parse("node 0xg") end, "Unexpected 'g' (1:6)")
+    assert.has_error(function() parser.parse("node 0xx") end, "Unexpected 'x' (1:6)")
+  end)
+
+  it("parses octal", function()
+    assert.same(document.new{ node.new("node", { value.new(342391) }) }, parse("node 0o01234567"))
+    assert.same(document.new{ node.new("node", { value.new(342391) }) }, parse("node 0o0123_4567"))
+    assert.same(document.new{ node.new("node", { value.new(342391) }) }, parse("node 0o01234567_"))
+    assert.has_error(function() parser.parse("node 0o_123") end, "Invalid octal: _123 (1:6)")
+    assert.has_error(function() parser.parse("node 0o8") end, "Unexpected '8' (1:6)")
+    assert.has_error(function() parser.parse("node 0oo") end, "Unexpected 'o' (1:6)")
+  end)
+
+  it("parses binary", function()
+    assert.same(document.new{ node.new("node", { value.new(5) }) }, parse("node 0b0101"))
+    assert.same(document.new{ node.new("node", { value.new(6) }) }, parse("node 0b01_10"))
+    assert.same(document.new{ node.new("node", { value.new(6) }) }, parse("node 0b01___10"))
+    assert.same(document.new{ node.new("node", { value.new(6) }) }, parse("node 0b0110_"))
+    assert.has_error(function() parser.parse("node 0b_0110") end, "Invalid binary: _0110 (1:6)")
+    assert.has_error(function() parser.parse("node 0b20") end, "Unexpected '2' (1:6)")
+    assert.has_error(function() parser.parse("node 0bb") end, "Unexpected 'b' (1:6)")
+  end)
+
+  it("parses raw strings", function()
+    assert.same(document.new{ node.new("node", { value.new("foo") }) }, parse([[node r"foo"]]))
+    assert.same(document.new{ node.new("node", { value.new([[foo\nbar]]) }) }, parse([[node r"foo\nbar"]]))
+    assert.same(document.new{ node.new("node", { value.new("foo") }) }, parse([[node r#"foo"#]]))
+    assert.same(document.new{ node.new("node", { value.new("foo") }) }, parse([[node r##"foo"##]]))
+    assert.same(document.new{ node.new("node", { value.new([[\nfoo\r]]) }) }, parse([[node r#"\nfoo\r"#]]))
+    assert.has_error(function() parser.parse('node r##"foo"#') end, "Unterminated rawstring literal (1:6)")
+  end)
+
+  it("parses booleans", function()
+    assert.same(document.new{ node.new("node", { value.new(true) }) }, parse("node true"))
+    assert.same(document.new{ node.new("node", { value.new(false) }) }, parse("node false"))
+  end)
+
+  it("parses nulls", function()
+    assert.same(document.new{ node.new("node", { value.new(nil) }) }, parse("node null"))
+  end)
+
+  it("parses node spacing", function()
+    assert.same(document.new{ node.new("node", { value.new(1) }) }, parse("node 1"))
+    assert.same(document.new{ node.new("node", { value.new(1) }) }, parse("node\t1"))
+    assert.same(document.new{ node.new("node", { value.new(1) }) }, parse("node\t \\ // hello\n 1"))
+  end)
+
+  it("parses single line comment", function()
+    assert.same(document.new{}, parse("//hello"))
+    assert.same(document.new{}, parse("// \thello"))
+    assert.same(document.new{}, parse("//hello\n"))
+    assert.same(document.new{}, parse("//hello\r\n"))
+    assert.same(document.new{}, parse("//hello\n\r"))
+    assert.same(document.new{ node.new("world") }, parse("//hello\rworld"))
+    assert.same(document.new{ node.new("world") }, parse("//hello\nworld\r\n"))
+  end)
+
+  it("parses multi line comment", function()
+    assert.same(document.new{}, parse("/*hello*/"));
+    assert.same(document.new{}, parse("/*hello*/\n"));
+    assert.same(document.new{}, parse("/*\nhello\r\n*/"));
+    assert.same(document.new{}, parse("/*\nhello** /\n*/"));
+    assert.same(document.new{}, parse("/**\nhello** /\n*/"));
+    assert.same(document.new{ node.new("world") }, parse("/*hello*/world"));
+  end)
+
+  it("parses esclines", function()
+    assert.same(document.new{ node.new("node", { value.new(1) }) }, parse("node\\\n  1"))
+    assert.has_error(function() parser.parse('node\\\nnode2') end, "Expected EQUALS, got EOF (2:6)")
+  end)
+
+  it("parses whitespace", function()
+    assert.same(document.new{ node.new("node") }, parse(" node"))
+    assert.same(document.new{ node.new("node") }, parse("\tnode"))
+    assert.same(document.new{ node.new("etc") }, parse("/* \nfoo\r\n */ etc"))
+  end)
+
+  it('parses newlines', function()
+    assert.same(document.new{ node.new('node1'), node.new('node2') }, parse("node1\nnode2"))
+    assert.same(document.new{ node.new('node1'), node.new('node2') }, parse("node1\rnode2"))
+    assert.same(document.new{ node.new('node1'), node.new('node2') }, parse("node1\r\nnode2"))
+    assert.same(document.new{ node.new('node1'), node.new('node2') }, parse("node1\n\nnode2"))
+  end)
+
+  it("parses basic", function()
+    local doc = parse('title "Hello, World"')
+    local nodes = document.new{
+      node.new("title", { value.new("Hello, World") })
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses multiple values", function()
+    local doc = parse("bookmarks 12 15 188 1234")
+    local nodes = document.new{
+      node.new("bookmarks", { value.new(12), value.new(15), value.new(188), value.new(1234) })
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses properties", function()
+    local doc = parse[[
+      author "Alex Monad" email="alex@example.com" active=true
+      foo bar=true "baz" quux=false 1 2 3
+    ]]
+    local nodes = document.new{
+      n("author", { value.new("Alex Monad") }, function(nd)
+        nd:insert("email", value.new("alex@example.com"))
+        nd:insert("active", value.new(true))
+      end),
+      n("foo", { value.new("baz"), value.new(1), value.new(2), value.new(3) }, function(nd)
+        nd:insert("bar", value.new(true))
+        nd:insert("quux", value.new(false))
+      end)
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses nested child nodes", function()
+    local doc = parse[[
+      contents {
+        section "First section" {
+          paragraph "This is the first paragraph"
+          paragraph "This is the second paragraph"
+        }
+      }
+    ]]
+    local nodes = document.new{
+      node.new("contents", {}, {
+        node.new("section", { value.new("First section") }, {
+          node.new("paragraph", { value.new("This is the first paragraph") }),
+          node.new("paragraph", { value.new("This is the second paragraph") })
+        })
+      })
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses semicolons", function()
+    local doc = parse("node1; node2; node3;")
+    local nodes = document.new{
+      node.new("node1"),
+      node.new("node2"),
+      node.new("node3"),
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses raw strings", function()
+    local doc = parse[[
+      node "this\nhas\tescapes"
+      other r"C:\Users\zkat\"
+      other-raw r#"hello"world"#
+    ]]
+    local nodes = document.new{
+      node.new("node", { value.new("this\nhas\tescapes") }),
+      node.new("other", { value.new("C:\\Users\\zkat\\") }),
+      node.new("other-raw", { value.new("hello\"world") })
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses multiline strings", function()
+    local doc = parse[[
+string "my
+multiline
+value"
+]]
+    local nodes = document.new{
+      node.new("string", { value.new("my\nmultiline\nvalue") })
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses numbers", function()
+    local doc = parse[[
+      num 1.234e-42
+      my-hex 0xdeadbeef
+      my-octal 0o755
+      my-binary 0b10101101
+      bignum 1_000_000
+    ]]
+    local nodes = document.new{
+      node.new("num", { value.new(1.234e-42) }),
+      node.new("my-hex", { value.new(0xdeadbeef) }),
+      node.new("my-octal", { value.new(493) }),
+      node.new("my-binary", { value.new(173) }),
+      node.new("bignum", { value.new(1000000) })
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses comments comments", function()
+    local doc = parse[[
+      // C style
+
+      /*
+      C style multiline
+      */
+
+      tag /*foo=true*/ bar=false
+
+      /*/*
+      hello
+      */*/
+    ]]
+    local nodes = document.new{
+      node.new("tag", { ["bar"]=value.new(false) })
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses slash dash", function()
+    local doc = parse[[
+      /-mynode "foo" key=1 {
+        a
+        b
+        c
+      }
+
+      mynode /- "commented" "not commented" /-key="value" /-{
+        a
+        b
+      }
+    ]]
+    local nodes = document.new{
+      node.new("mynode", { value.new("not commented") })
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses multiline nodes", function()
+    local doc = parse[[
+      title \
+        "Some title"
+
+      my-node 1 2 \  // comments are ok after \
+        3 4
+    ]]
+    local nodes = document.new{
+      node.new("title", { value.new("Some title") }),
+      node.new("my-node", { value.new(1), value.new(2), value.new(3), value.new(4) })
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses utf8", function()
+    local doc = parse[[
+      smile "😁"
+      ノード お名前="☜(ﾟヮﾟ☜)"
+    ]]
+    local nodes = document.new{
+      node.new("smile", { value.new("😁") }),
+      node.new("ノード", { ["お名前"]=value.new("☜(ﾟヮﾟ☜)") })
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses node names", function()
+    local doc = parse[[
+      "!@#$@$%Q#$%~@!40" "1.2.3" "!!!!!"=true
+      foo123~!@#$%^&*.:'|?+ "weeee"
+    ]]
+    local nodes = document.new{
+      node.new("!@#$@$%Q#$%~@!40", { value.new("1.2.3"), ["!!!!!"]=value.new(true) }),
+      node.new("foo123~!@#$%^&*.:'|?+", { value.new("weeee") }),
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses escapes", function()
+    local doc = parse[[
+      node1 "\u{1f600}"
+      node2 "\n\t\r\\\"\f\b"
+    ]]
+    local nodes = document.new{
+      node.new("node1", { value.new("😀") }),
+      node.new("node2", { value.new("\n\t\r\\\"\f\b") })
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses node types", function()
+    local doc = parse("(foo)node")
+    local nodes = document.new{
+      node.new("node", {}, {}, "foo")
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses value types", function()
+    local doc = parse('node (foo)"bar"')
+    local nodes = document.new{
+      node.new("node", { value.new("bar", "foo") }),
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses property types", function()
+    local doc = parse('node baz=(foo)"bar"')
+    local nodes = document.new{
+      node.new("node", { ["baz"]=value.new("bar", "foo") }),
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("parses child types", function()
+    local doc = parse[[
+      node {
+        (foo)bar
+      }
+    ]]
+    local nodes = document.new{
+      node.new("node", {}, {
+        node.new("bar", {}, {}, "foo"),
+      })
+    }
+    assert.same(nodes, doc)
+  end)
+
+  it("reads version directive", function()
+    local doc = parse('/- kdl-version 1\nnode "foo"')
+    assert.is_not_nil(doc)
+
+    assert.has_error(function() parser.parse('/- kdl-version 2\nnode foo') end, "Version mismatch, expected 1, got 2")
+  end)
+end)

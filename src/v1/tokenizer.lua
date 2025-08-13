@@ -1,6 +1,6 @@
 local utf8 = require "lua-utf8"
 
-local util = require "kdl.util"
+local util = require "kdl.v1.util"
 
 local tokenizer = {}
 
@@ -150,43 +150,7 @@ function Tokenizer:parse_binary(s)
   self:fail("Invalid binary: "..s)
 end
 
-local function unescape_ws(str)
-  local function char(i)
-    if i < 0 or i > utf8.len(str) then
-      return nil
-    end
-    return utf8.sub(str, i, i)
-  end
-
-  local i = 1
-  local buffer = ""
-  while i <= utf8.len(str) do
-    local c = char(i)
-    if c == nil then
-      return buffer
-    elseif c == "\\" then
-      local c2 = char(i+1)
-      if c2 == nil then return buffer
-      elseif c2 == "\\" then buffer = buffer.."\\\\"; i = i+1
-      elseif table.contains(util.WHITESPACE, c2) or table.contains(util.NEWLINES, c2) then
-        local j = i+2
-        local cj = char(j)
-        while table.contains(util.WHITESPACE, cj) or table.contains(util.NEWLINES, cj) do
-          j = j+1
-          cj = char(j)
-        end
-        i = j-1
-      else buffer = buffer + c
-      end
-    else buffer = buffer..c
-    end
-    i = i+1
-  end
-
-  return buffer
-end
-
-function Tokenizer:convert_escapes(str, ws)
+function Tokenizer:unescape(str)
   local function char(i)
     if i < 0 or i > utf8.len(str) then
       return nil
@@ -230,7 +194,7 @@ function Tokenizer:convert_escapes(str, ws)
         end
         i = j
         buffer = buffer..utf8.char(code)
-      elseif ws and (table.contains(util.WHITESPACE, c2) or table.contains(util.NEWLINES, c2)) then
+      elseif table.contains(util.WHITESPACE, c2) or table.contains(util.NEWLINES, c2) then
         local j = i+2
         local cj = char(j)
         while table.contains(util.WHITESPACE, cj) or table.contains(util.NEWLINES, cj) do
@@ -249,41 +213,6 @@ function Tokenizer:convert_escapes(str, ws)
   return buffer
 end
 
-function Tokenizer:unescape(str)
-  return self:convert_escapes(str, true)
-end
-
-function Tokenizer:unescape_non_ws(str)
-  return self:convert_escapes(str, false)
-end
-
-function Tokenizer:dedent(str)
-  local lines = util.lines(str)
-  local indent = table.remove(lines, #lines)
-  if not indent:match("^"..util.wss.."$") then
-    self:fail("Invalid multi-line string final line")
-  end
-
-  local valid = "^"..indent.."(.*)"
-
-  local result = {}
-  for _,line in ipairs(lines) do
-    if line:match("^"..util.wss.."$") then
-      table.insert(result, '')
-      goto continue
-    end
-    local m = line:match(valid)
-    if m then
-      table.insert(result, m)
-      goto continue
-    end
-    self:fail("Invalid multi-line string indentation")
-    ::continue::
-  end
-
-  return table.join(result, "\n")
-end
-
 function Tokenizer:_read_next()
   self.context = nil
   self.previous_context = nil
@@ -300,49 +229,31 @@ function Tokenizer:_read_next()
         self.done = true
         return self:_token("EOF", "")
       elseif c == '"' then
+        self:set_context("string")
         self.buffer = ""
-        if self:char(self.index + 1) == '"' and self:char(self.index + 2) == '"' then
-          local nl = self:expect_newline(self.index + 3)
-          self:set_context("multi_line_string")
-          self:traverse(3 + utf8.len(nl))
-        else
-          self:set_context("string")
-          self:traverse(1)
-        end
-      elseif c == "#" then
+        self:traverse(1)
+      elseif c == "r" then
         if self:char(self.index + 1) == '"' then
+          self:set_context("rawstring")
+          self:traverse(2)
+          self.rawstring_hashes = 0
           self.buffer = ""
-          self.rawstring_hashes = 1
-          if self:char(self.index + 2) == '"' and self:char(self.index + 3) == '"' then
-            local nl = self:expect_newline(self.index + 4)
-            self:set_context("multi_line_rawstring")
-            self:traverse(utf8.len(nl) + 4)
-          else
-            self:set_context("rawstring")
-            self:traverse(2)
-          end
           goto continue
         elseif self:char(self.index + 1) == "#" then
           local i = self.index + 1
-          self.rawstring_hashes = 1
+          self.rawstring_hashes = 0
           while self:char(i) == "#" do
             self.rawstring_hashes = self.rawstring_hashes + 1
             i = i + 1
           end
           if self:char(i) == '"' then
+            self:set_context("rawstring")
+            self:traverse(self.rawstring_hashes + 2)
             self.buffer = ""
-            if self:char(i + 1) == '"' and self:char(i + 2) == '"' then
-              local nl = self:expect_newline(i + 3)
-              self:set_context("multi_line_rawstring")
-              self:traverse(self.rawstring_hashes + 3 + utf8.len(nl))
-            else
-              self:set_context("rawstring")
-              self:traverse(self.rawstring_hashes + 1)
-            end
             goto continue
           end
         end
-        self:set_context("keyword")
+        self:set_context("ident")
         self.buffer = c
         self:traverse(1)
       elseif c == "-" then
@@ -397,11 +308,12 @@ function Tokenizer:_read_next()
           end
         end
         self:fail([[Unexpected '\']])
-      elseif c == "=" then
-        self.buffer = c
-        self:set_context("equals")
-        self:traverse(1)
       elseif util.SYMBOLS[c] then
+        if c == "(" then
+          self.in_type = true
+        elseif c == ")" then
+          self.in_type = false
+        end
         self:traverse(1)
         return self:_token(util.SYMBOLS[c], c)
       elseif c == "\r" or table.contains(util.NEWLINES, c) then
@@ -415,6 +327,7 @@ function Tokenizer:_read_next()
           self:set_context("single_line_comment")
           self:traverse(2)
         elseif n == "*" then
+          if self.in_type or self.last_token == "RPAREN" then self:fail("Unexpected '/'") end
           self:set_context("multi_line_comment")
           self.comment_nesting = 1
           self:traverse(2)
@@ -432,14 +345,6 @@ function Tokenizer:_read_next()
         self.buffer = c
         self:set_context("ident")
         self:traverse(1)
-      elseif c == "(" then
-        self.in_type = true
-        self:traverse(1)
-        return self:_token("LPAREN", c)
-      elseif c == ")" then
-        self.in_type = false
-        self:traverse(1)
-        return self:_token("RPAREN", c)
       else
         self:fail("Unexpected '"..c.."'")
       end
@@ -448,32 +353,16 @@ function Tokenizer:_read_next()
         self.buffer = self.buffer..c
         self:traverse(1)
       else
-        if table.contains(util.RESERVED, self.buffer) then
-          self:fail("Identifier cannot be a literal")
-        elseif self.buffer:match("^%.%d") then
-          self:fail("Identifier cannot look like an illegal float")
-        else
-          return self:_token("IDENT", self.buffer)
+        if self.buffer == "true" then return self:_token("TRUE", true)
+        elseif self.buffer == "false" then return self:_token("FALSE", false)
+        elseif self.buffer == "null" then return self:_token("NULL", nil)
+        else return self:_token("IDENT", self.buffer)
         end
-      end
-    elseif self.context == "keyword" then
-      if c ~= nil and c:match("[a-z%-]") then
-        self.buffer = self.buffer..c
-        self:traverse(1)
-      else
-        if self.buffer == "#true" then return self:_token("TRUE", true) end
-        if self.buffer == "#false" then return self:_token("FALSE", false) end
-        if self.buffer == "#null" then return self:_token("NULL", nil) end
-        if self.buffer == "#inf" then return self:_token("FLOAT", math.huge) end
-        if self.buffer == "#-inf" then return self:_token("FLOAT", -math.huge) end
-        if self.buffer == "#nan" then return self:_token("FLOAT", -(0/0)) end
-        self:fail("Unknown keyword "..self.buffer)
       end
     elseif self.context == "string" then
       if c == "\\" then
-        self.buffer = self.buffer..c
         local c2 = self:char(self.index + 1)
-        self.buffer = self.buffer..c2
+        self.buffer = self.buffer..c..c2
         if table.contains(util.NEWLINES, c2) then
           local i = 2
           c2 = self:char(self.index + i)
@@ -489,28 +378,8 @@ function Tokenizer:_read_next()
       elseif c == '"' then
         self:traverse(1)
         return self:_token("STRING", self:unescape(self.buffer))
-      elseif c == "" or c == nil then
+      elseif c == nil or c == "" then
         self:fail("Unterminated string literal")
-      else
-        if table.contains(util.NEWLINES, c) then
-          self:fail("Unexpected NEWLINE in single-line string")
-        end
-        self.buffer = self.buffer..c
-        self:traverse(1)
-      end
-    elseif self.context == "multi_line_string" then
-      if c == "\\" then
-        self.buffer = self.buffer..c..self:char(self.index + 1)
-        self:traverse(2)
-      elseif c == '"' then
-        if self:char(self.index + 1) == '"' and self:char(self.index + 2) == '"' then
-          self:traverse(3)
-          return self:_token("STRING", self:unescape_non_ws(self:dedent(unescape_ws(self.buffer))))
-        end
-        self.buffer = self.buffer..c
-        self:traverse(1)
-      elseif c == "" or c == nil then
-        self:fail("Unterminated multi-line string literal")
       else
         self.buffer = self.buffer..c
         self:traverse(1)
@@ -528,30 +397,6 @@ function Tokenizer:_read_next()
         if h == self.rawstring_hashes then
           self:traverse(1 + h)
           return self:_token("RAWSTRING", self.buffer)
-        end
-      elseif table.contains(util.NEWLINES, c) then
-        self:fail("Unexpected NEWLINE in single-line rawstring")
-      end
-
-      self.buffer = self.buffer..c
-      self:traverse(1)
-    elseif self.context == "multi_line_rawstring" then
-      if c == nil or c == "" then
-        self:fail("Unterminated multi-line rawstring literal")
-      end
-
-      if c == '"' and
-        self:char(self.index + 1) == '"' and
-        self:char(self.index + 2) == '"' and
-        self:char(self.index + 3) == '#' then
-
-        local h = 1
-        while self:char(self.index + 3 + h) == "#" and h < self.rawstring_hashes do
-          h = h + 1
-        end
-        if h == self.rawstring_hashes then
-          self:traverse(h + 3)
-          return self:_token("RAWSTRING", self:dedent(self.buffer))
         end
       end
 
@@ -620,10 +465,6 @@ function Tokenizer:_read_next()
       if table.contains(util.WHITESPACE, c) then
         self.buffer = self.buffer..c
         self:traverse(1)
-      elseif c == "=" then
-        self.buffer = self.buffer..c
-        self:set_context("equals")
-        self:traverse(1)
       elseif c == "\\" then
         local t = tokenizer.new(self.str, self.index + 1)
         local la = t:next()
@@ -650,14 +491,6 @@ function Tokenizer:_read_next()
       else
         return self:_token("WS", self.buffer)
       end
-    elseif self.context == "equals" then
-      local t = tokenizer.new(self.str, self.index)
-      local la = t:next()
-      if la.type == "WS" then
-        self.buffer = self.buffer..la.value
-        self:traverse_to(t.index)
-      end
-      return self:_token("EQUALS", self.buffer)
     elseif self.context == nil then
       self:fail("Unexpected nil context")
     else

@@ -1,4 +1,4 @@
-local tokenizer = require "kdl.tokenizer"
+local tokenizer = require "kdl.v1.tokenizer"
 local document = require "kdl.document"
 local node = require "kdl.node"
 local value = require "kdl.value"
@@ -17,8 +17,8 @@ end
 function Parser:check_version()
   local doc_version = self.tokenizer:version_directive()
   if not doc_version then return end
-  if doc_version ~= 2 then
-    error("Version mismatch, expected 2, got "..doc_version)
+  if doc_version ~= 1 then
+    error("Version mismatch, expected 1, got "..doc_version)
   end
 end
 
@@ -41,7 +41,8 @@ function Parser:node()
 
   local commented = false
   if self.tokenizer:peek().type == "SLASHDASH" then
-    self:slashdash()
+    self.tokenizer:next()
+    self:ws()
     commented = true
   end
 
@@ -93,74 +94,43 @@ end
 
 function Parser:entries(n)
   local commented = false
-  local has_children = false
   while true do
+    self:ws()
     local peek = self.tokenizer:peek()
-    if peek.type == "WS" or peek.type == "SLASHDASH" then
+    if peek.type == "IDENT" then
+      local k, v = self:prop()
+      if not commented then n:insert(k, v) end
+      commented = false
+    elseif peek.type == "LBRACE" then
+      local child_nodes = self:children()
+      if not commented then n.children = child_nodes end
+      self:node_term()
+      return
+    elseif peek.type == "SLASHDASH" then
+      commented = true
+      self.tokenizer:next()
       self:ws()
-      peek = self.tokenizer:peek()
-      if peek.type == "SLASHDASH" then
-        self:slashdash()
-        peek = self.tokenizer:peek()
-        commented = true
-      end
-      if peek.type == "STRING" or peek.type == "IDENT" then
-        if has_children then fail("Unexpected "..peek.type, peek) end
-        local t = self.tokenizer:peek_next()
-        if t.type == "EQUALS" then
-          local k, v = self:prop()
-          if not commented then n:insert(k, v) end
-        else
-          local v = self:value()
-          if not commented then n:insert(v) end
-        end
-        commented = false
-      elseif peek.type == "NEWLINE" or
-          peek.type == "EOF" or
-          peek.type == "SEMICOLON" then
-        self.tokenizer:next()
-        return
-      elseif peek.type == "LBRACE" then
-        self:lbrace(n, commented)
-        has_children = true
-        commented = false
-      elseif peek.type == "RBRACE" then
-        self:rbrace()
-        return
-      else
-        local v = self:value()
-        if has_children then fail("Unexpected "..peek.type, peek) end
-        if not commented then n:insert(v) end
-        commented = false
-      end
     elseif peek.type == "NEWLINE" or
         peek.type == "EOF" or
         peek.type == "SEMICOLON" then
       self.tokenizer:next()
       return
-    elseif peek.type == "LBRACE" then
-      self:lbrace(n, commented)
-      has_children = true
+    elseif peek.type == "STRING" then
+      local t = self.tokenizer:peek_next()
+      if t.type == "EQUALS" then
+        local k, v = self:prop()
+        if not commented then n:insert(k, v) end
+      else
+        local v = self:value()
+        if not commented then n:insert(v) end
+      end
       commented = false
-    elseif peek.type == "RBRACE" then
-      self:rbrace()
-      return
     else
-      fail("Unexpected "..peek.type, peek)
+      local v = self:value()
+      if not commented then n:insert(v) end
+      commented = false
     end
   end
-end
-
-function Parser:lbrace(n, commented)
-  if not commented and #n.children > 0 then fail("Unexpected {", self.tokenizer:peek()) end
-  self.depth = self.depth + 1
-  local children = self:children()
-  self.depth = self.depth - 1
-  if not commented then n.children = children end
-end
-
-function Parser:rbrace()
-  if self.depth == 0 then fail("Unexpected }", self.tokenizer:peek()) end
 end
 
 function Parser:prop()
@@ -172,17 +142,16 @@ end
 
 function Parser:children()
   self:expect("LBRACE")
-  local nodes = self:nodes()
+  local node_list = self:nodes()
   self:linespaces()
   self:expect("RBRACE")
-  return nodes
+  return node_list
 end
 
 function Parser:value()
   local type = self:type()
   local t = self.tokenizer:next()
-  if t.type == "IDENT" or
-    t.type == "STRING" or
+  if t.type == "STRING" or
     t.type == "RAWSTRING" or
     t.type == "INTEGER" or
     t.type == "FLOAT" or
@@ -197,30 +166,25 @@ end
 function Parser:type()
   if self.tokenizer:peek().type ~= "LPAREN" then return nil end
   self:expect("LPAREN")
-  self:ws()
   local type = self:identifier()
-  self:ws()
   self:expect("RPAREN")
-  self:ws()
   return type
-end
-
-function Parser:slashdash()
-  local t = self.tokenizer:next()
-  if t.type ~= "SLASHDASH" then
-    fail("Expected SLASHDASH, found "..t.type, t)
-  end
-  self:linespaces()
-  local peek = self.tokenizer:peek()
-  if peek.type == "RBRACE" or peek.type == "EOF" or peek.type=="SEMICOLON" then
-    fail("Unexpected "..peek.type.." after SLASHDASH", peek)
-  end
 end
 
 function Parser:expect(type)
   local t = self.tokenizer:peek()
   if t.type == type then return self.tokenizer:next()
   else fail("Expected "..type..", got "..t.type, t) end
+end
+
+function Parser:node_term()
+  self:ws()
+  local t = self.tokenizer:peek()
+  if t.type == "NEWLINE" or t.type == "SEMICOLON" or t.type == "EOF" then
+    self.tokenizer:next()
+  else
+    fail("Unexpected "..t.type, t)
+  end
 end
 
 function Parser:eof()

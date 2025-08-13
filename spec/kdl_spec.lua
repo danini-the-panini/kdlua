@@ -1,6 +1,25 @@
+local lfs = require "lfs"
+local kdl = require "kdl"
+require "spec.support"
+
 describe("kdl", function()
-  local lfs = require "lfs"
-  local kdl = require "kdl"
+  it("detects version", function()
+    -- parses either v1 or v2
+    assert.valid_kdl("node foo #true", "node foo #true")
+    assert.valid_kdl("node \"foo\" true", "node foo #true")
+
+    -- chooses parser based on version directive
+    assert.valid_kdl("/- kdl-version 1\nnode \"foo\" true", "node foo #true")
+    assert.valid_kdl("/- kdl-version 2\nnode foo #true", "node foo #true")
+
+    -- fails parsing if syntax does not match version directive
+    assert.is_not.valid_kdl("/- kdl-version 1\nnode foo #true", "Expected EQUALS, got WS (2:9)")
+    assert.is_not.valid_kdl("/- kdl-version 2\nnode \"foo\" true", "Identifier cannot be a literal (2:12)")
+
+    -- fails parsing mixed syntax
+    assert.is_not.valid_kdl("node foo true", "Expected EQUALS, got WS (1:9)")
+    assert.is_not.valid_kdl("node r\"foo\" #true", "Expected EQUALS, got EOF (1:18)")
+  end)
 
   local function exists(name)
     local f=io.open(name,"r")
@@ -14,11 +33,6 @@ describe("kdl", function()
     return s
   end
 
-  local function parse(str)
-    local ok, r = xpcall(kdl.parse_document, debug.traceback, str)
-    if ok then return r else error(r) end
-  end
-
   local TEST_CASES = "spec/kdl-org/tests/test_cases"
   for file in lfs.dir(TEST_CASES.."/input") do
     if file ~= "." and file ~= ".." then
@@ -26,11 +40,11 @@ describe("kdl", function()
       local expected = TEST_CASES.."/expected_kdl/"..file
       if exists(expected) then
         it("parses "..input, function()
-          assert.equals(readfile(expected), tostring(parse(readfile(input))))
+          assert.valid_kdl(readfile(input), readfile(expected), 2)
         end)
       else
         it("does not parse "..input, function()
-          assert.has_error(function() kdl.parse_document(readfile(input)) end)
+          assert.is_not.valid_kdl(readfile(input), 2)
         end)
       end
     end

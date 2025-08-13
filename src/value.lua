@@ -17,7 +17,7 @@ local function __tostring(self)
     elseif self.value ~= self.value then
       s = "#nan"
     else
-      s = tostring(self.value)
+      s = tostring(self.value):upper()
     end
   elseif self.value == true then
     s = "#true"
