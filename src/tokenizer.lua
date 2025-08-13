@@ -163,8 +163,7 @@ local function unescape_ws(str)
     elseif c == "\\" then
       local c2 = char(i+1)
       if c2 == nil then return buffer
-      elseif c2 == "\\" then buffer = buffer.."\\"; i = i+1
-      elseif c2 == "s" then buffer = buffer.." "; i = i+1
+      elseif c2 == "\\" then buffer = buffer.."\\\\"; i = i+1
       elseif table.contains(util.WHITESPACE, c2) or table.contains(util.NEWLINES, c2) then
         local j = i+2
         local cj = char(j)
@@ -261,7 +260,7 @@ local function dedent(str)
     error("Invalid multi-line string final line")
   end
 
-  local valid = indent.."(.*)"
+  local valid = "^"..indent.."(.*)"
 
   local result = {}
   for _,line in ipairs(lines) do
@@ -496,7 +495,7 @@ function Tokenizer:_read_next()
     elseif self.context == "multi_line_string" then
       if c == "\\" then
         self.buffer = self.buffer..c..self:char(self.index + 1)
-        self:traverse(1)
+        self:traverse(2)
       elseif c == '"' then
         if self:char(self.index + 1) == '"' and self:char(self.index + 2) == '"' then
           self:traverse(3)
