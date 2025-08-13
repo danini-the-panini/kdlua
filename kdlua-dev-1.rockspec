@@ -20,7 +20,10 @@ build = {
       ["kdl.parser"] = "src/parser.lua",
       ["kdl.tokenizer"] = "src/tokenizer.lua",
       ["kdl.stringdumper"] = "src/stringdumper.lua",
-      ["kdl.util"] = "src/util.lua"
+      ["kdl.util"] = "src/util.lua",
+      ["kdl.v1.parser"] = "src/v1/parser.lua",
+      ["kdl.v1.tokenizer"] = "src/v1/tokenizer.lua",
+      ["kdl.v1.util"] = "src/v1/util.lua"
    }
 }
 test = {

@@ -2,3 +2,7 @@
 	path = spec/kdl-org
 	url = git@github.com:kdl-org/kdl
 	branch = kdl-v2
+[submodule "spec/v1/kdl-org"]
+	path = spec/v1/kdl-org
+	url = git@github.com:kdl-org/kdl.git
+	branch = release/v1
