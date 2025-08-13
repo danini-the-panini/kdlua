@@ -1,4 +1,4 @@
-name: Busted
+name: Test
 on: [push, pull_request]
 jobs:
   test:
@@ -6,6 +6,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          submodules: 'true'
 
       - uses: hishamhm/gh-actions-lua@master
         with:
@@ -18,5 +20,6 @@ jobs:
       - name: Build
         run: "luarocks build"
 
-      - name: Run Busted
-        uses: lunarmodules/busted@v2.2.0
+      - name: Test
+        run: "luarocks test"
+
