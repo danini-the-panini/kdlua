@@ -2,7 +2,7 @@ package = "kdlua"
 version = "1.0.0-0"
 rockspec_format = "3.0"
 source = {
-   url = "git://github.com/danini-the-panini/kdlua"
+   url = "git+https://github.com/danini-the-panini/kdlua.git"
 }
 description = {
    summary = "KDL Document Language",
