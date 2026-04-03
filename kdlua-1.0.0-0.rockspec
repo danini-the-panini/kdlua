@@ -7,7 +7,7 @@ source = {
 description = {
    summary = "KDL Document Language",
    detailed = "Lua implementation of the KDL Document Language Spec",
-   homepage = "https://github.com/danini-the-pamini/kdlua",
+   homepage = "https://github.com/danini-the-panini/kdlua",
    license = "MIT"
 }
 build = {
