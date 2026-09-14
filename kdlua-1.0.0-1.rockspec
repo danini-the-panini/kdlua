@@ -1,5 +1,5 @@
 package = "kdlua"
-version = "1.0.0-0"
+version = "1.0.0-1"
 rockspec_format = "3.0"
 source = {
    url = "git+https://github.com/danini-the-panini/kdlua.git"
